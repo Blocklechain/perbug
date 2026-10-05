@@ -42,28 +42,26 @@ jobs:
           # so free that symlink first and treat the install's exit code as
           # advisory, then hard-fail only if a dependency we need is missing.
           brew unlink openssl@1.1 2>/dev/null || true
-          # Install the specific Qt components Bitcoin Core needs — NOT the
-          # `qt`/`qt@6` metapackage, which now resolves to full Qt 6.11 and
-          # drags in qtwebengine + llvm + rust + node (a ~90-minute install
-          # with no bottles on this runner tier). qtbase/qttools/qttranslations
-          # /qtsvg cover the GUI, lrelease and the translation data.
-          brew install cmake boost@1.85 libevent \
-            qtbase qttools qttranslations qtsvg \
-            qrencode zeromq sqlite pkgconf || true
-          brew link --overwrite --force qtbase boost@1.85 2>/dev/null || true
-          for f in cmake boost@1.85 libevent qtbase qttools qttranslations qrencode zeromq sqlite pkgconf; do
+          # Install the full `qt` formula. Splitting it into qtbase/qttools
+          # kegs breaks Qt6's component discovery — find_package(Qt6 COMPONENTS
+          # LinguistTools) only searches siblings of the qtbase Qt6Config, so
+          # a separate qttools keg is invisible and qt6_add_lrelease fails at
+          # configure. The metapackage unifies the cmake packages (and pulls a
+          # large dep tree, so this step is slow but reliable).
+          brew install cmake boost@1.85 libevent qt qrencode zeromq sqlite pkgconf || true
+          brew link --overwrite --force qt boost@1.85 2>/dev/null || true
+          for f in cmake boost@1.85 libevent qt qrencode zeromq sqlite pkgconf; do
             brew --prefix "$f" >/dev/null 2>&1 || { echo "MISSING dependency: $f"; exit 1; }
           done
 
       - name: Configure
         run: |
-          # Qt lives across several kegs now (qtbase + qttools for lrelease);
-          # translations ship in the qttranslations keg, NOT under qtbase, so
-          # point QT_TRANSLATIONS_DIR there or macdeployqtplus aborts the
-          # `deploy` target with "Could not find translation dir".
+          # Translations ship in the qttranslations keg, NOT under the qt
+          # prefix, so resolve QT_TRANSLATIONS_DIR explicitly or macdeployqtplus
+          # aborts the `deploy` target with "Could not find translation dir".
           TRANSLATIONS=""
           for c in "$(brew --prefix qttranslations 2>/dev/null)/share/qt/translations" \
-                   "$(brew --prefix qtbase 2>/dev/null)/share/qt/translations" \
+                   "$(brew --prefix qt 2>/dev/null)/share/qt/translations" \
                    "/opt/homebrew/share/qt/translations"; do
             [ -d "$c" ] && { TRANSLATIONS="$c"; break; }
           done
@@ -78,7 +76,7 @@ jobs:
             -DBUILD_UTIL=ON \
             -DBUILD_WALLET_TOOL=ON \
             -DENABLE_IPC=OFF \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qtbase);$(brew --prefix qttools);$(brew --prefix qtsvg);$(brew --prefix boost@1.85)" \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix boost@1.85)" \
             -DBoost_INCLUDE_DIR="$(brew --prefix boost@1.85)/include" \
             -DQT_TRANSLATIONS_DIR="$TRANSLATIONS" \
             -DCMAKE_OSX_ARCHITECTURES=arm64
@@ -99,7 +97,6 @@ jobs:
           # "no Qt platform plugin could be initialized".
           QTDIR=""
           for c in "$(brew --prefix qtbase 2>/dev/null)" \
-                   "$(brew --prefix qt@6 2>/dev/null)" \
                    "$(brew --prefix qt 2>/dev/null)"; do
             if [ -n "$c" ] && [ -f "$c/share/qt/plugins/platforms/libqcocoa.dylib" ]; then
               QTDIR="$c"; break
