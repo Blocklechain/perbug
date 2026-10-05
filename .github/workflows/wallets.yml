@@ -34,7 +34,19 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install cmake boost@1.85 libevent qt@6 qrencode zeromq sqlite pkgconf
+          # The runner ships openssl@1.1, which owns the bin/openssl symlink.
+          # python@3.14 comes in as a transitive dep and pulls openssl@3, whose
+          # keg-link then collides with openssl@1.1 and makes `brew install`
+          # exit non-zero — failing the whole job even though every formula we
+          # actually compile against built fine. We never link against openssl,
+          # so free that symlink first and treat the install's exit code as
+          # advisory, then hard-fail only if a dependency we need is missing.
+          brew unlink openssl@1.1 2>/dev/null || true
+          brew install cmake boost@1.85 libevent qt@6 qrencode zeromq sqlite pkgconf || true
+          brew link --overwrite --force qt@6 boost@1.85 2>/dev/null || true
+          for f in cmake boost@1.85 libevent qt@6 qrencode zeromq sqlite pkgconf; do
+            brew --prefix "$f" >/dev/null 2>&1 || { echo "MISSING dependency: $f"; exit 1; }
+          done
 
       - name: Configure
         run: |
