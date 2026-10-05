@@ -42,14 +42,33 @@ jobs:
           # so free that symlink first and treat the install's exit code as
           # advisory, then hard-fail only if a dependency we need is missing.
           brew unlink openssl@1.1 2>/dev/null || true
-          brew install cmake boost@1.85 libevent qt@6 qrencode zeromq sqlite pkgconf || true
-          brew link --overwrite --force qt@6 boost@1.85 2>/dev/null || true
-          for f in cmake boost@1.85 libevent qt@6 qrencode zeromq sqlite pkgconf; do
+          # Install the specific Qt components Bitcoin Core needs — NOT the
+          # `qt`/`qt@6` metapackage, which now resolves to full Qt 6.11 and
+          # drags in qtwebengine + llvm + rust + node (a ~90-minute install
+          # with no bottles on this runner tier). qtbase/qttools/qttranslations
+          # /qtsvg cover the GUI, lrelease and the translation data.
+          brew install cmake boost@1.85 libevent \
+            qtbase qttools qttranslations qtsvg \
+            qrencode zeromq sqlite pkgconf || true
+          brew link --overwrite --force qtbase boost@1.85 2>/dev/null || true
+          for f in cmake boost@1.85 libevent qtbase qttools qttranslations qrencode zeromq sqlite pkgconf; do
             brew --prefix "$f" >/dev/null 2>&1 || { echo "MISSING dependency: $f"; exit 1; }
           done
 
       - name: Configure
         run: |
+          # Qt lives across several kegs now (qtbase + qttools for lrelease);
+          # translations ship in the qttranslations keg, NOT under qtbase, so
+          # point QT_TRANSLATIONS_DIR there or macdeployqtplus aborts the
+          # `deploy` target with "Could not find translation dir".
+          TRANSLATIONS=""
+          for c in "$(brew --prefix qttranslations 2>/dev/null)/share/qt/translations" \
+                   "$(brew --prefix qtbase 2>/dev/null)/share/qt/translations" \
+                   "/opt/homebrew/share/qt/translations"; do
+            [ -d "$c" ] && { TRANSLATIONS="$c"; break; }
+          done
+          test -n "$TRANSLATIONS" || { echo "cannot locate Qt translations dir"; exit 1; }
+          echo "QT_TRANSLATIONS_DIR=$TRANSLATIONS"
           cmake -B build \
             -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
             -DBUILD_GUI=ON \
@@ -59,9 +78,9 @@ jobs:
             -DBUILD_UTIL=ON \
             -DBUILD_WALLET_TOOL=ON \
             -DENABLE_IPC=OFF \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6);$(brew --prefix boost@1.85)" \
+            -DCMAKE_PREFIX_PATH="$(brew --prefix qtbase);$(brew --prefix qttools);$(brew --prefix qtsvg);$(brew --prefix boost@1.85)" \
             -DBoost_INCLUDE_DIR="$(brew --prefix boost@1.85)/include" \
-            -DQT_TRANSLATIONS_DIR="$(brew --prefix qt@6)/share/qt/translations" \
+            -DQT_TRANSLATIONS_DIR="$TRANSLATIONS" \
             -DCMAKE_OSX_ARCHITECTURES=arm64
 
       - name: Build
