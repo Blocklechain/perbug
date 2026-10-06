@@ -41,14 +41,24 @@ jobs:
           # actually compile against built fine. We never link against openssl,
           # so free that symlink first and treat the install's exit code as
           # advisory, then hard-fail only if a dependency we need is missing.
+          export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_CURL_RETRIES=5
           brew unlink openssl@1.1 2>/dev/null || true
           # Install the full `qt` formula. Splitting it into qtbase/qttools
           # kegs breaks Qt6's component discovery — find_package(Qt6 COMPONENTS
           # LinguistTools) only searches siblings of the qtbase Qt6Config, so
           # a separate qttools keg is invisible and qt6_add_lrelease fails at
-          # configure. The metapackage unifies the cmake packages (and pulls a
-          # large dep tree, so this step is slow but reliable).
-          brew install cmake boost@1.85 libevent qt qrencode zeromq sqlite pkgconf || true
+          # configure. The metapackage unifies the cmake packages.
+          #
+          # qt pulls a few deps that build from source and fetch tarballs from
+          # ftp.gnu.org (coreutils, automake), which intermittently times out
+          # from the macOS runners. brew is idempotent, so retry the whole
+          # install a few times — each pass resumes from what already landed —
+          # and let Homebrew retry each download before giving up.
+          for attempt in 1 2 3 4 5; do
+            brew install cmake boost@1.85 libevent qt qrencode zeromq sqlite pkgconf && break
+            echo "brew install attempt $attempt failed (likely a transient ftp.gnu.org timeout); retrying in 30s…"
+            sleep 30
+          done
           brew link --overwrite --force qt boost@1.85 2>/dev/null || true
           for f in cmake boost@1.85 libevent qt qrencode zeromq sqlite pkgconf; do
             brew --prefix "$f" >/dev/null 2>&1 || { echo "MISSING dependency: $f"; exit 1; }
