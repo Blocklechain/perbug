@@ -35,6 +35,11 @@ unsigned int LwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const Consen
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&);
 bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Params&);
 
+/** Check the proof-of-work of a full header, resolving AuxPoW (merge-mining):
+ *  for an AuxPoW block the parent chain's block must satisfy nBits and must
+ *  commit this block's hash; otherwise the block's own hash must satisfy nBits. */
+bool CheckProofOfWork(const CBlockHeader& block, const Consensus::Params&);
+
 /**
  * Return false if the proof-of-work requirement specified by new_nbits at a
  * given height is not possible, given the proof-of-work on the prior block as

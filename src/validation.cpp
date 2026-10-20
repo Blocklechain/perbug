@@ -3927,8 +3927,8 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
 
 static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
-    // Check proof of work matches claimed amount
-    if (fCheckPOW && !CheckProofOfWork(block.GetHash(), block.nBits, consensusParams))
+    // Check proof of work matches claimed amount (resolves AuxPoW if present)
+    if (fCheckPOW && !CheckProofOfWork(block, consensusParams))
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
 
     return true;
@@ -4124,7 +4124,7 @@ std::vector<unsigned char> ChainstateManager::GenerateCoinbaseCommitment(CBlock&
 bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consensus::Params& consensusParams)
 {
     return std::all_of(headers.cbegin(), headers.cend(),
-            [&](const auto& header) { return CheckProofOfWork(header.GetHash(), header.nBits, consensusParams);});
+            [&](const auto& header) { return CheckProofOfWork(header, consensusParams);});
 }
 
 bool IsBlockMutated(const CBlock& block, bool check_witness_root)
@@ -4191,6 +4191,16 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     const Consensus::Params& consensusParams = chainman.GetConsensus();
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-diffbits", "incorrect proof of work");
+
+    // AuxPoW / merge-mining gating: no AuxPoW before the fork; from the fork the
+    // chain id is enforced so blocks can't be replayed onto another chain.
+    {
+        const bool auxpowActive = consensusParams.nAuxpowStartHeight > 0 && nHeight >= consensusParams.nAuxpowStartHeight;
+        if (block.IsAuxpow() && !auxpowActive)
+            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "auxpow-not-active", "AuxPoW block before the fork height");
+        if (auxpowActive && block.GetChainId() != consensusParams.nAuxpowChainId)
+            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-auxpow-chainid", "block has the wrong chain id");
+    }
 
     // Check timestamp against prev
     if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())

@@ -93,6 +93,9 @@ public:
         consensus.nPowTargetSpacing = 2.5 * 60;
         consensus.nLwmaHeight = 75760;      // LWMA per-block retarget hard fork
         consensus.nLwmaStartDifficulty = 40000;  // ~1.3 TH/s @ 2.5-min blocks
+        consensus.nAuxpowChainId = 0x0062;        // merge-mining chain id ("Pb")
+        consensus.nAuxpowStartHeight = 80000;     // AuxPoW hard fork
+        consensus.fStrictChainId = true;
         consensus.nLwmaAveragingWindow = 90;
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.enforce_BIP94 = false;
@@ -447,6 +450,9 @@ public:
         consensus.MinBIP9WarningHeight = 0;
 
         consensus.powLimit = uint256{"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
+        consensus.nAuxpowChainId = 0x0062;
+        consensus.nAuxpowStartHeight = 1;    // allow merge-mining from block 1 in regtest
+        consensus.fStrictChainId = false;    // let the parent reuse our chain id in tests
         consensus.nPowTargetTimespan = 24 * 60 * 60;
         consensus.nPowTargetSpacing = 2.5 * 60;
         consensus.fPowAllowMinDifficultyBlocks = true;

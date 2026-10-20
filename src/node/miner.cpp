@@ -137,6 +137,14 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     nHeight = pindexPrev->nHeight + 1;
 
     pblock->nVersion = m_chainstate.m_chainman.m_versionbitscache.ComputeBlockVersion(pindexPrev, chainparams.GetConsensus());
+    // From the AuxPoW fork, every block (merge-mined or not) must carry our
+    // chain id in the version, else ContextualCheckBlockHeader rejects it.
+    {
+        const Consensus::Params& auxcp = chainparams.GetConsensus();
+        if (auxcp.nAuxpowStartHeight > 0 && nHeight >= auxcp.nAuxpowStartHeight) {
+            pblock->SetBaseVersion(4, auxcp.nAuxpowChainId);
+        }
+    }
     // -regtest only: allow overriding block.nVersion with
     // -blockversion=N to test forking scenarios
     if (chainparams.MineBlocksOnDemand()) {

@@ -22,6 +22,10 @@
 #include <net.h>
 #include <node/context.h>
 #include <node/miner.h>
+#include <arith_uint256.h>
+#include <auxpow.h>
+#include <streams.h>
+#include <sync.h>
 #include <node/warnings.h>
 #include <policy/ephemeral_policy.h>
 #include <pow.h>
@@ -1134,9 +1138,114 @@ static RPCHelpMan submitheader()
     };
 }
 
+// ---- Merge-mining (AuxPoW) RPC ----------------------------------------------
+
+namespace {
+Mutex g_auxpow_mutex;
+std::map<uint256, CBlock> g_auxpow_blocks GUARDED_BY(g_auxpow_mutex);
+} // namespace
+
+static RPCHelpMan createauxblock()
+{
+    return RPCHelpMan{"createauxblock",
+        "Create a merge-mining block template. Returns the block hash to commit\n"
+        "in the parent chain's coinbase, plus the chain id, target and bits.\n",
+        {
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "payout address for the block subsidy"},
+        },
+        RPCResult{RPCResult::Type::OBJ, "", "", {
+            {RPCResult::Type::STR_HEX, "hash", "hash to commit in the parent coinbase"},
+            {RPCResult::Type::NUM, "chainid", "this chain's merge-mining id"},
+            {RPCResult::Type::STR_HEX, "previousblockhash", "current tip hash"},
+            {RPCResult::Type::NUM, "coinbasevalue", "block subsidy, in satoshis"},
+            {RPCResult::Type::STR_HEX, "bits", "compact target"},
+            {RPCResult::Type::STR_HEX, "_target", "target in reversed byte order"},
+        }},
+        RPCExamples{HelpExampleCli("createauxblock", "\"pb1...\"")},
+    [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+    {
+        const CTxDestination dest = DecodeDestination(request.params[0].get_str());
+        if (!IsValidDestination(dest)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid payout address");
+        }
+        const CScript script = GetScriptForDestination(dest);
+        NodeContext& node = EnsureAnyNodeContext(request.context);
+        Mining& miner = EnsureMining(node);
+        const Consensus::Params& consensus = Params().GetConsensus();
+
+        std::unique_ptr<BlockTemplate> tmpl = miner.createNewBlock({.coinbase_output_script = script});
+        if (!tmpl) throw JSONRPCError(RPC_OUT_OF_MEMORY, "failed to create block template");
+        CBlock block = tmpl->getBlock();
+        block.hashMerkleRoot = BlockMerkleRoot(block); // getBlock() leaves this unfinalised
+        // Tag with our chain id + the AuxPoW flag; the committed hash is the
+        // pure-header hash (excludes the auxpow, which the pool supplies later).
+        block.SetBaseVersion(4, consensus.nAuxpowChainId);
+        block.SetAuxpowVersion(true);
+        const uint256 hash = block.GetHash();
+
+        WITH_LOCK(g_auxpow_mutex, g_auxpow_blocks[hash] = block);
+
+        arith_uint256 target;
+        bool neg, over;
+        target.SetCompact(block.nBits, &neg, &over);
+
+        UniValue r(UniValue::VOBJ);
+        r.pushKV("hash", hash.GetHex());
+        r.pushKV("chainid", consensus.nAuxpowChainId);
+        r.pushKV("previousblockhash", block.hashPrevBlock.GetHex());
+        r.pushKV("coinbasevalue", (int64_t)block.vtx[0]->vout[0].nValue);
+        r.pushKV("bits", strprintf("%08x", block.nBits));
+        r.pushKV("_target", ArithToUint256(target).GetHex());
+        return r;
+    }};
+}
+
+static RPCHelpMan submitauxblock()
+{
+    return RPCHelpMan{"submitauxblock",
+        "Submit a solved merge-mining block: the hash returned by createauxblock\n"
+        "and the hex-encoded AuxPoW (parent coinbase, merkle branches, parent header).\n",
+        {
+            {"hash", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "the aux block hash from createauxblock"},
+            {"auxpow", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "serialised AuxPoW proof"},
+        },
+        RPCResult{RPCResult::Type::BOOL, "", "whether the block was accepted"},
+        RPCExamples{HelpExampleCli("submitauxblock", "\"<hash>\" \"<auxpowhex>\"")},
+    [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+    {
+        const uint256 hash(ParseHashV(request.params[0], "hash"));
+        CBlock block;
+        {
+            LOCK(g_auxpow_mutex);
+            auto it = g_auxpow_blocks.find(hash);
+            if (it == g_auxpow_blocks.end()) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "block hash unknown (template expired?)");
+            }
+            block = it->second;
+        }
+        const std::vector<unsigned char> vap = ParseHex(request.params[1].get_str());
+        DataStream ss{vap};
+        auto auxpow = std::make_unique<CAuxPow>();
+        try {
+            ss >> *auxpow;
+        } catch (const std::exception&) {
+            throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "could not deserialise auxpow");
+        }
+        block.SetAuxpow(std::move(auxpow));
+
+        ChainstateManager& chainman = EnsureAnyChainman(request.context);
+        auto blockptr = std::make_shared<const CBlock>(std::move(block));
+        const bool accepted = chainman.ProcessNewBlock(blockptr, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/nullptr);
+        WITH_LOCK(g_auxpow_mutex, g_auxpow_blocks.erase(hash));
+        return accepted;
+    }};
+}
+
 void RegisterMiningRPCCommands(CRPCTable& t)
 {
     static const CRPCCommand commands[]{
+        {"mining", &createauxblock},
+        {"mining", &submitauxblock},
         {"mining", &getnetworkhashps},
         {"mining", &getmininginfo},
         {"mining", &prioritisetransaction},
