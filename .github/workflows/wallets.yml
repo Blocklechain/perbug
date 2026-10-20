@@ -28,6 +28,10 @@ jobs:
   macos:
     name: macOS (Apple Silicon)
     runs-on: macos-14          # arm64. Do NOT change to macos-13 (Intel).
+    # The Homebrew dependency step intermittently HANGS (ftp.gnu.org stalls pulling
+    # qt's from-source deps). Bound the whole job so a hang fails fast instead of
+    # running to the 6h limit; the release still publishes from Linux+Windows below.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -361,7 +365,10 @@ jobs:
   release:
     name: Publish release
     needs: [macos, windows, linux]
-    if: startsWith(github.ref, 'refs/tags/')
+    # Publish as long as Linux + Windows built; macOS is best-effort (it hangs on
+    # Homebrew). It still gets its full attempt and attaches its asset when it works,
+    # but a macOS failure/timeout no longer blocks the release.
+    if: always() && startsWith(github.ref, 'refs/tags/') && needs.linux.result == 'success' && needs.windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
