@@ -219,6 +219,18 @@ unsigned int LwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const Consen
 }
 
 
+bool CheckProofOfWork(const CBlockHeader& block, const Consensus::Params& params)
+{
+    // Merge-mined block: the work lives on the parent chain, which must commit
+    // this block's hash (via auxpow->check) and itself meet our nBits target.
+    if (block.IsAuxpow()) {
+        if (!block.auxpow) return false;
+        if (!block.auxpow->check(block.GetHash(), block.GetChainId(), params)) return false;
+        return CheckProofOfWork(block.auxpow->getParentBlock().GetHash(), block.nBits, params);
+    }
+    return CheckProofOfWork(block.GetHash(), block.nBits, params);
+}
+
 bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Params& params)
 {
     auto bnTarget{DeriveTarget(nBits, params.powLimit)};

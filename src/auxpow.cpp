@@ -8,7 +8,6 @@
 
 #include <consensus/params.h>
 #include <hash.h>
-#include <logging.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <uint256.h>
@@ -16,9 +15,10 @@
 #include <algorithm>
 
 namespace {
-inline bool AuxErr(const char* msg)
+inline bool AuxErr(const char* /*msg*/)
 {
-    LogDebug(BCLog::VALIDATION, "AuxPow check failed: %s\n", msg);
+    // Kept dependency-light (this feeds the consensus library): no logging here;
+    // the generic "high-hash" validation error is surfaced to the caller.
     return false;
 }
 inline uint256 HashPair(const uint256& a, const uint256& b)
@@ -77,7 +77,7 @@ bool CAuxPow::check(const uint256& hashAuxBlock, int nChainId, const Consensus::
 
     // 2) The coinbase tx must hash up its own merkle branch to the parent
     //    block's merkle root (i.e. it really is in the parent block).
-    if (CheckMerkleBranch(coinbaseTx->GetHash(), vMerkleBranch, nIndex) != parentBlock.hashMerkleRoot)
+    if (CheckMerkleBranch(coinbaseTx->GetHash().ToUint256(), vMerkleBranch, nIndex) != parentBlock.hashMerkleRoot)
         return AuxErr("coinbase merkle branch does not lead to parent merkle root");
 
     const CScript& script = coinbaseTx->vin[0].scriptSig;

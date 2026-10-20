@@ -130,6 +130,14 @@ struct Params {
     // level (not diff-1) stops the miner present at the fork from grinding
     // hundreds of near-free blocks before LWMA converges.
     int64_t nLwmaStartDifficulty{40000};
+    // --- AuxPoW (merge-mining) ---
+    /** Chain id committed in the block version and the parent coinbase. */
+    int32_t nAuxpowChainId{0};
+    /** Height from which AuxPoW blocks are allowed and the chain id is enforced.
+     *  0 = disabled (no merge-mining on this network). */
+    int nAuxpowStartHeight{0};
+    /** Reject a parent block that claims our own chain id (disable for tests). */
+    bool fStrictChainId{true};
     std::chrono::seconds PowTargetSpacing() const
     {
         return std::chrono::seconds{nPowTargetSpacing};
