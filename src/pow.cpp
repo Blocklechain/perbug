@@ -11,10 +11,17 @@
 #include <uint256.h>
 #include <util/check.h>
 
+#include <algorithm>
+
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
     assert(pindexLast != nullptr);
     unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
+
+    // LWMA per-block retarget hard fork: once active, recompute every block.
+    if (params.nLwmaHeight > 0 && pindexLast->nHeight + 1 >= params.nLwmaHeight) {
+        return LwmaGetNextWorkRequired(pindexLast, params);
+    }
 
     // Only change once per difficulty adjustment interval
     if ((pindexLast->nHeight+1) % params.DifficultyAdjustmentInterval() != 0)
@@ -90,6 +97,10 @@ bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t heig
 {
     if (params.fPowAllowMinDifficultyBlocks) return true;
 
+    // Post-LWMA the difficulty legitimately changes every block; the exact
+    // value is still enforced by GetNextWorkRequired in ContextualCheckBlockHeader.
+    if (params.nLwmaHeight > 0 && height >= params.nLwmaHeight) return true;
+
     if (height % params.DifficultyAdjustmentInterval() == 0) {
         int64_t smallest_timespan = params.nPowTargetTimespan/4;
         int64_t largest_timespan = params.nPowTargetTimespan*4;
@@ -157,6 +168,51 @@ std::optional<arith_uint256> DeriveTarget(unsigned int nBits, const uint256 pow_
 
     return bnTarget;
 }
+
+// Zawy LWMA-1 per-block difficulty. Averages the target over the last N blocks,
+// weighting recent solvetimes more heavily, so difficulty tracks real hashrate
+// within ~N blocks and the chain recovers on its own when miners come and go.
+// Active from params.nLwmaHeight. For the first N blocks after the fork there is
+// no full post-fork window and the pre-fork difficulty may be stuck very high,
+// so we reset to the minimum (powLimit) to unstick the chain immediately; LWMA
+// then climbs back to the real level over the next N blocks.
+unsigned int LwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const Consensus::Params& params)
+{
+    const int64_t T = params.nPowTargetSpacing;
+    const int64_t N = params.nLwmaAveragingWindow;
+    const int64_t k = N * (N + 1) * T / 2;
+    const int height = pindexLast->nHeight + 1;
+    const arith_uint256 powLimit = UintToArith256(params.powLimit);
+
+    if (height < params.nLwmaHeight + N) {
+        return powLimit.GetCompact();
+    }
+
+    arith_uint256 sumTarget(0);
+    int64_t t = 0, j = 0;
+
+    const CBlockIndex* blockPreviousTimestamp = pindexLast->GetAncestor(pindexLast->nHeight - N);
+    int64_t previousTimestamp = blockPreviousTimestamp->GetBlockTime();
+
+    for (int64_t i = pindexLast->nHeight - N + 1; i <= pindexLast->nHeight; i++) {
+        const CBlockIndex* block = pindexLast->GetAncestor(i);
+        int64_t thisTimestamp = (block->GetBlockTime() > previousTimestamp)
+            ? block->GetBlockTime() : previousTimestamp + 1;
+        int64_t solvetime = std::min<int64_t>(6 * T, thisTimestamp - previousTimestamp);
+        previousTimestamp = thisTimestamp;
+        j++;
+        t += solvetime * j;
+        arith_uint256 target;
+        target.SetCompact(block->nBits);
+        sumTarget += target / (k * N);   // pre-scaled to avoid 256-bit overflow
+    }
+    // Clamp the weighted-solvetime sum so one step can't raise difficulty > ~100x.
+    if (t < k / 100) t = k / 100;
+    arith_uint256 nextTarget = sumTarget * t;
+    if (nextTarget > powLimit) nextTarget = powLimit;
+    return nextTarget.GetCompact();
+}
+
 
 bool CheckProofOfWorkImpl(uint256 hash, unsigned int nBits, const Consensus::Params& params)
 {

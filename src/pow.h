@@ -28,6 +28,8 @@ std::optional<arith_uint256> DeriveTarget(unsigned int nBits, const uint256 pow_
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params&);
 unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params&);
+/** Per-block Zawy LWMA-1 difficulty (active from params.nLwmaHeight). */
+unsigned int LwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const Consensus::Params&);
 
 /** Check whether a block hash satisfies the proof-of-work requirement specified by nBits */
 bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&);

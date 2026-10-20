@@ -118,6 +118,13 @@ struct Params {
     bool fPowNoRetargeting;
     int64_t nPowTargetSpacing;
     int64_t nPowTargetTimespan;
+    // --- LWMA per-block difficulty hard fork (Zawy LWMA-1) ---
+    // From nLwmaHeight the target is recomputed every block over
+    // nLwmaAveragingWindow blocks, so the chain recovers from hashrate
+    // that comes and goes instead of being stuck until the next 4032-block
+    // retarget. 0 = disabled (keep the legacy Bitcoin retarget).
+    int nLwmaHeight{0};
+    int64_t nLwmaAveragingWindow{90};
     std::chrono::seconds PowTargetSpacing() const
     {
         return std::chrono::seconds{nPowTargetSpacing};

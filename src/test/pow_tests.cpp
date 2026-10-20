@@ -5,6 +5,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <pow.h>
+#include <arith_uint256.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <util/chaintype.h>
@@ -206,6 +207,56 @@ BOOST_AUTO_TEST_CASE(ChainParams_TESTNET4_sanity)
 BOOST_AUTO_TEST_CASE(ChainParams_SIGNET_sanity)
 {
     sanity_check_chainparams(*m_node.args, ChainType::SIGNET);
+}
+
+BOOST_AUTO_TEST_CASE(lwma_difficulty)
+{
+    const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
+    Consensus::Params params = chainParams->GetConsensus();
+    const int FORK = 100;
+    const int N = 20;
+    params.nLwmaHeight = FORK;
+    params.nLwmaAveragingWindow = N;
+    const int64_t T = params.nPowTargetSpacing;
+    const arith_uint256 powLimit = UintToArith256(params.powLimit);
+
+    auto make_chain = [&](int64_t solvetime, unsigned int startBits) {
+        auto blocks = std::make_shared<std::vector<CBlockIndex>>(FORK + 2 * N + 2);
+        for (size_t i = 0; i < blocks->size(); i++) {
+            (*blocks)[i].pprev = i ? &(*blocks)[i - 1] : nullptr;
+            (*blocks)[i].nHeight = (int)i;
+            (*blocks)[i].nTime = 1600000000 + (unsigned int)((int64_t)i * solvetime);
+            (*blocks)[i].nBits = startBits;
+            (*blocks)[i].BuildSkip();
+        }
+        return blocks;
+    };
+
+    const unsigned int startBits = 0x1b0404cbU;
+    arith_uint256 startT; startT.SetCompact(startBits);
+
+    // Bootstrap window [FORK, FORK+N): difficulty resets to the pow limit so a
+    // stuck chain unsticks immediately.
+    {
+        auto blocks = make_chain(T, startBits);
+        unsigned int got = LwmaGetNextWorkRequired(&(*blocks)[FORK], params);
+        BOOST_CHECK_EQUAL(got, powLimit.GetCompact());
+    }
+    // Slow blocks (3x target spacing) after a full window -> difficulty drops
+    // (target grows ~3x); fast blocks (1/4 spacing) -> difficulty rises.
+    {
+        const int lastH = FORK + 2 * N;
+        auto slow = make_chain(3 * T, startBits);
+        arith_uint256 slowT; slowT.SetCompact(LwmaGetNextWorkRequired(&(*slow)[lastH], params));
+        BOOST_CHECK(slowT > startT);
+
+        auto fast = make_chain(T / 4, startBits);
+        arith_uint256 fastT; fastT.SetCompact(LwmaGetNextWorkRequired(&(*fast)[lastH], params));
+        BOOST_CHECK(fastT < startT);
+
+        // Never exceeds the pow limit.
+        BOOST_CHECK(slowT <= powLimit);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
