@@ -71,12 +71,24 @@ jobs:
           # aborts the `deploy` target with "Could not find translation dir".
           TRANSLATIONS=""
           for c in "$(brew --prefix qttranslations 2>/dev/null)/share/qt/translations" \
+                   "$(brew --prefix qttools 2>/dev/null)/share/qt/translations" \
                    "$(brew --prefix qt 2>/dev/null)/share/qt/translations" \
+                   "$(brew --prefix qtbase 2>/dev/null)/share/qt/translations" \
                    "/opt/homebrew/share/qt/translations"; do
-            [ -d "$c" ] && { TRANSLATIONS="$c"; break; }
+            [ -n "$c" ] && [ -d "$c" ] && { TRANSLATIONS="$c"; break; }
           done
-          test -n "$TRANSLATIONS" || { echo "cannot locate Qt translations dir"; exit 1; }
-          echo "QT_TRANSLATIONS_DIR=$TRANSLATIONS"
+          # Homebrew's Qt6 layout moves around between versions; fall back to a
+          # broad search rather than hard-failing the whole macOS wallet build.
+          if [ -z "$TRANSLATIONS" ]; then
+            TRANSLATIONS="$(find /opt/homebrew -type d -path '*/share/qt/translations' 2>/dev/null | head -1)"
+          fi
+          TRANS_FLAG=""
+          if [ -n "$TRANSLATIONS" ]; then
+            echo "QT_TRANSLATIONS_DIR=$TRANSLATIONS"
+            TRANS_FLAG="-DQT_TRANSLATIONS_DIR=$TRANSLATIONS"
+          else
+            echo "WARNING: no Qt translations dir found; building without bundled translations"
+          fi
           cmake -B build \
             -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
             -DBUILD_GUI=ON \
@@ -88,7 +100,7 @@ jobs:
             -DENABLE_IPC=OFF \
             -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix boost@1.85)" \
             -DBoost_INCLUDE_DIR="$(brew --prefix boost@1.85)/include" \
-            -DQT_TRANSLATIONS_DIR="$TRANSLATIONS" \
+            $TRANS_FLAG \
             -DCMAKE_OSX_ARCHITECTURES=arm64
 
       - name: Build
