@@ -120,3 +120,37 @@ bool CAuxPow::check(const uint256& hashAuxBlock, int nChainId, const Consensus::
 
     return true;
 }
+
+std::unique_ptr<CAuxPow> CreateAuxPow(const uint256& hashAuxBlock)
+{
+    // Single-slot chain merkle tree (height 0): the root is just the aux hash,
+    // chain index 0, empty branch. The commitment is stored byte-reversed.
+    std::vector<unsigned char> vchRoot(hashAuxBlock.begin(), hashAuxBlock.end());
+    std::reverse(vchRoot.begin(), vchRoot.end());
+
+    // Parent coinbase scriptSig: magic ‖ reversed-root ‖ size(=1, LE32) ‖ nonce(=0, LE32)
+    std::vector<unsigned char> vScript;
+    vScript.insert(vScript.end(), std::begin(pchMergedMiningHeader), std::end(pchMergedMiningHeader));
+    vScript.insert(vScript.end(), vchRoot.begin(), vchRoot.end());
+    const unsigned char sizeLE[4] = {1, 0, 0, 0}; // 1 == (1 << 0)
+    const unsigned char nonceLE[4] = {0, 0, 0, 0};
+    vScript.insert(vScript.end(), sizeLE, sizeLE + 4);
+    vScript.insert(vScript.end(), nonceLE, nonceLE + 4);
+
+    CMutableTransaction coinbase;
+    coinbase.vin.resize(1);
+    coinbase.vin[0].prevout.SetNull();
+    coinbase.vin[0].scriptSig = CScript(vScript.begin(), vScript.end());
+    coinbase.vout.resize(1);
+    coinbase.vout[0].nValue = 0;
+    CTransactionRef coinbaseTx = MakeTransactionRef(std::move(coinbase));
+
+    auto auxpow = std::make_unique<CAuxPow>(coinbaseTx);
+    auxpow->nIndex = 0;
+    auxpow->nChainIndex = 0;
+    // single-transaction parent block → merkle root == coinbase txid, empty branch
+    auxpow->parentBlock.SetNull();
+    auxpow->parentBlock.nVersion = 1;
+    auxpow->parentBlock.hashMerkleRoot = coinbaseTx->GetHash().ToUint256();
+    return auxpow;
+}

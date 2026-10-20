@@ -82,4 +82,13 @@ int GetExpectedAuxPoWIndex(uint32_t nNonce, int nChainId, unsigned h);
 
 using CAuxPowPtr = std::shared_ptr<CAuxPow>;
 
+/**
+ * Build a minimal, structurally-valid AuxPoW that commits @p hashAuxBlock using
+ * a single-slot chain merkle tree and a single-transaction parent block. The
+ * parent block's proof-of-work is NOT solved here — the caller (a miner, or a
+ * test) grinds parentBlock.nNonce afterwards to meet the target. Used by the
+ * auxpow tests and the regtest merge-mine round-trip.
+ */
+std::unique_ptr<CAuxPow> CreateAuxPow(const uint256& hashAuxBlock);
+
 #endif // BITCOIN_AUXPOW_H
