@@ -91,7 +91,8 @@ public:
         consensus.powLimit = uint256{"00000ffff0000000000000000000000000000000000000000000000000000000"};
         consensus.nPowTargetTimespan = 7 * 24 * 60 * 60; // one week at 5-minute spacing, 2016 blocks
         consensus.nPowTargetSpacing = 2.5 * 60;
-        consensus.nLwmaHeight = 75730;      // LWMA per-block retarget hard fork
+        consensus.nLwmaHeight = 75760;      // LWMA per-block retarget hard fork
+        consensus.nLwmaStartDifficulty = 40000;  // ~1.3 TH/s @ 2.5-min blocks
         consensus.nLwmaAveragingWindow = 90;
         consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.enforce_BIP94 = false;
