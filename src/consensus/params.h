@@ -125,6 +125,11 @@ struct Params {
     // retarget. 0 = disabled (keep the legacy Bitcoin retarget).
     int nLwmaHeight{0};
     int64_t nLwmaAveragingWindow{90};
+    // Bootstrap difficulty for the first nLwmaAveragingWindow blocks after
+    // the fork, relative to powLimit (diff-1). Resetting to a realistic
+    // level (not diff-1) stops the miner present at the fork from grinding
+    // hundreds of near-free blocks before LWMA converges.
+    int64_t nLwmaStartDifficulty{40000};
     std::chrono::seconds PowTargetSpacing() const
     {
         return std::chrono::seconds{nPowTargetSpacing};

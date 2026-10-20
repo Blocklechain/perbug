@@ -217,6 +217,7 @@ BOOST_AUTO_TEST_CASE(lwma_difficulty)
     const int N = 20;
     params.nLwmaHeight = FORK;
     params.nLwmaAveragingWindow = N;
+    params.nLwmaStartDifficulty = 40000;
     const int64_t T = params.nPowTargetSpacing;
     const arith_uint256 powLimit = UintToArith256(params.powLimit);
 
@@ -239,8 +240,9 @@ BOOST_AUTO_TEST_CASE(lwma_difficulty)
     // stuck chain unsticks immediately.
     {
         auto blocks = make_chain(T, startBits);
+        arith_uint256 expectStart = powLimit / params.nLwmaStartDifficulty;
         unsigned int got = LwmaGetNextWorkRequired(&(*blocks)[FORK], params);
-        BOOST_CHECK_EQUAL(got, powLimit.GetCompact());
+        BOOST_CHECK_EQUAL(got, expectStart.GetCompact());
     }
     // Slow blocks (3x target spacing) after a full window -> difficulty drops
     // (target grows ~3x); fast blocks (1/4 spacing) -> difficulty rises.

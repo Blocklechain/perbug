@@ -185,7 +185,12 @@ unsigned int LwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const Consen
     const arith_uint256 powLimit = UintToArith256(params.powLimit);
 
     if (height < params.nLwmaHeight + N) {
-        return powLimit.GetCompact();
+        // Restart from a realistic difficulty (powLimit / nLwmaStartDifficulty),
+        // never easier than diff-1, so the chain unsticks at once without
+        // handing the fork-height miner a flood of near-free blocks.
+        arith_uint256 startTarget = powLimit / std::max<int64_t>(1, params.nLwmaStartDifficulty);
+        if (startTarget > powLimit) startTarget = powLimit;
+        return startTarget.GetCompact();
     }
 
     arith_uint256 sumTarget(0);
