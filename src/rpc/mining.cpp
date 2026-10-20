@@ -1176,6 +1176,7 @@ static RPCHelpMan createauxblock()
         std::unique_ptr<BlockTemplate> tmpl = miner.createNewBlock({.coinbase_output_script = script});
         if (!tmpl) throw JSONRPCError(RPC_OUT_OF_MEMORY, "failed to create block template");
         CBlock block = tmpl->getBlock();
+        block.hashMerkleRoot = BlockMerkleRoot(block); // getBlock() leaves this unfinalised
         // Tag with our chain id + the AuxPoW flag; the committed hash is the
         // pure-header hash (excludes the auxpow, which the pool supplies later).
         block.SetBaseVersion(4, consensus.nAuxpowChainId);

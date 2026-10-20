@@ -5,10 +5,16 @@
 #include <auxpow.h>
 
 #include <chainparams.h>
+#include <consensus/merkle.h>
+#include <node/miner.h>
+#include <pow.h>
+#include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
+#include <util/time.h>
+#include <validation.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -57,3 +63,9 @@ BOOST_AUTO_TEST_CASE(merkle_branch_roundtrip)
 }
 
 BOOST_AUTO_TEST_SUITE_END()
+
+// NOTE: the full submit→ProcessNewBlock→chain-extends round-trip is verified
+// against a LIVE regtest node (test/functional-style RPC round-trip) rather
+// than here, because Perbug's 150s spacing makes the TestChain100Setup tip time
+// run far ahead of the unit-test mock clock, tripping the future-time check
+// inside BlockAssembler before an AuxPoW block can be built.
