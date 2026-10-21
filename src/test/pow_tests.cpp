@@ -236,11 +236,14 @@ BOOST_AUTO_TEST_CASE(lwma_difficulty)
     const unsigned int startBits = 0x1b0404cbU;
     arith_uint256 startT; startT.SetCompact(startBits);
 
-    // Bootstrap window [FORK, FORK+N): difficulty resets to the pow limit so a
-    // stuck chain unsticks immediately.
+    // Bootstrap window [FORK, FORK+N): difficulty resets to nLwmaStartDifficulty —
+    // measured against the DIFF-1 target (0x1d00ffff), NOT powLimit (which is 256x
+    // easier on Perbug) — so a stuck chain unsticks at a realistic difficulty.
     {
         auto blocks = make_chain(T, startBits);
-        arith_uint256 expectStart = powLimit / params.nLwmaStartDifficulty;
+        arith_uint256 diff1; diff1.SetCompact(0x1d00ffff);
+        arith_uint256 expectStart = diff1 / params.nLwmaStartDifficulty;
+        if (expectStart > powLimit) expectStart = powLimit;
         unsigned int got = LwmaGetNextWorkRequired(&(*blocks)[FORK], params);
         BOOST_CHECK_EQUAL(got, expectStart.GetCompact());
     }
