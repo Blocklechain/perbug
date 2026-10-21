@@ -185,10 +185,13 @@ unsigned int LwmaGetNextWorkRequired(const CBlockIndex* pindexLast, const Consen
     const arith_uint256 powLimit = UintToArith256(params.powLimit);
 
     if (height < params.nLwmaHeight + N) {
-        // Restart from a realistic difficulty (powLimit / nLwmaStartDifficulty),
-        // never easier than diff-1, so the chain unsticks at once without
-        // handing the fork-height miner a flood of near-free blocks.
-        arith_uint256 startTarget = powLimit / std::max<int64_t>(1, params.nLwmaStartDifficulty);
+        // Restart from a realistic difficulty = nLwmaStartDifficulty. Difficulty is
+        // measured against the DIFF-1 target (0x1d00ffff), NOT powLimit — Perbug's
+        // powLimit is 256x easier than diff-1, so dividing powLimit here produced
+        // difficulty ~156 instead of ~40000 (Andy's catch). Divide the diff-1 target
+        // so nLwmaStartDifficulty means what it says; clamp to powLimit just in case.
+        arith_uint256 diff1; diff1.SetCompact(0x1d00ffff);
+        arith_uint256 startTarget = diff1 / std::max<int64_t>(1, params.nLwmaStartDifficulty);
         if (startTarget > powLimit) startTarget = powLimit;
         return startTarget.GetCompact();
     }

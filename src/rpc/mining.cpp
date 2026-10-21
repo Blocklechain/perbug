@@ -1143,6 +1143,10 @@ static RPCHelpMan submitheader()
 namespace {
 Mutex g_auxpow_mutex;
 std::map<uint256, CBlock> g_auxpow_blocks GUARDED_BY(g_auxpow_mutex);
+// The prevhash the cached templates were built on. When the tip moves, every
+// cached template is stale, so we drop them all — this bounds memory for a pool
+// that polls createauxblock steadily (Namecoin clears on tip change too).
+uint256 g_auxpow_prev GUARDED_BY(g_auxpow_mutex);
 } // namespace
 
 static RPCHelpMan createauxblock()
@@ -1157,9 +1161,11 @@ static RPCHelpMan createauxblock()
             {RPCResult::Type::STR_HEX, "hash", "hash to commit in the parent coinbase"},
             {RPCResult::Type::NUM, "chainid", "this chain's merge-mining id"},
             {RPCResult::Type::STR_HEX, "previousblockhash", "current tip hash"},
+            {RPCResult::Type::NUM, "height", "height of this aux block (tip + 1)"},
             {RPCResult::Type::NUM, "coinbasevalue", "block subsidy, in satoshis"},
             {RPCResult::Type::STR_HEX, "bits", "compact target"},
-            {RPCResult::Type::STR_HEX, "_target", "target in reversed byte order"},
+            {RPCResult::Type::STR_HEX, "target", "target (big-endian hex)"},
+            {RPCResult::Type::STR_HEX, "_target", "target in reversed byte order (Namecoin-compat)"},
         }},
         RPCExamples{HelpExampleCli("createauxblock", "\"pb1...\"")},
     [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
@@ -1172,6 +1178,8 @@ static RPCHelpMan createauxblock()
         NodeContext& node = EnsureAnyNodeContext(request.context);
         Mining& miner = EnsureMining(node);
         const Consensus::Params& consensus = Params().GetConsensus();
+        ChainstateManager& chainman = EnsureAnyChainman(request.context);
+        int height; { LOCK(chainman.GetMutex()); height = chainman.ActiveChain().Height() + 1; }
 
         std::unique_ptr<BlockTemplate> tmpl = miner.createNewBlock({.coinbase_output_script = script});
         if (!tmpl) throw JSONRPCError(RPC_OUT_OF_MEMORY, "failed to create block template");
@@ -1183,7 +1191,15 @@ static RPCHelpMan createauxblock()
         block.SetAuxpowVersion(true);
         const uint256 hash = block.GetHash();
 
-        WITH_LOCK(g_auxpow_mutex, g_auxpow_blocks[hash] = block);
+        WITH_LOCK(g_auxpow_mutex, {
+            // Tip moved since the last template? Every cached template is now stale
+            // (built on an old prevhash) — drop them so memory can't grow unbounded.
+            if (g_auxpow_prev != block.hashPrevBlock) {
+                g_auxpow_blocks.clear();
+                g_auxpow_prev = block.hashPrevBlock;
+            }
+            g_auxpow_blocks[hash] = block;
+        });
 
         arith_uint256 target;
         bool neg, over;
@@ -1193,8 +1209,10 @@ static RPCHelpMan createauxblock()
         r.pushKV("hash", hash.GetHex());
         r.pushKV("chainid", consensus.nAuxpowChainId);
         r.pushKV("previousblockhash", block.hashPrevBlock.GetHex());
+        r.pushKV("height", height);
         r.pushKV("coinbasevalue", (int64_t)block.vtx[0]->vout[0].nValue);
         r.pushKV("bits", strprintf("%08x", block.nBits));
+        r.pushKV("target", ArithToUint256(target).GetHex());
         r.pushKV("_target", ArithToUint256(target).GetHex());
         return r;
     }};

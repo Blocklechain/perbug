@@ -91,9 +91,12 @@ public:
         consensus.powLimit = uint256{"00000ffff0000000000000000000000000000000000000000000000000000000"};
         consensus.nPowTargetTimespan = 7 * 24 * 60 * 60; // one week at 5-minute spacing, 2016 blocks
         consensus.nPowTargetSpacing = 2.5 * 60;
-        consensus.nLwmaHeight = 75760;      // LWMA per-block retarget hard fork
+        consensus.nLwmaHeight = 75725;      // LWMA per-block retarget hard fork — close to
+                                            // the stuck tip (~75721) so the chain unsticks soon
         consensus.nLwmaStartDifficulty = 40000;  // ~1.3 TH/s @ 2.5-min blocks
-        consensus.nAuxpowChainId = 0x0062;        // merge-mining chain id ("Pb")
+        consensus.nAuxpowChainId = 0x0064;        // merge-mining chain id — slot 18 in the
+                                                  // 32-slot Namecoin tree (0x62 collided with
+                                                  // Doichain in slot 24); avoids common mm coins
         consensus.nAuxpowStartHeight = 80000;     // AuxPoW hard fork
         consensus.fStrictChainId = true;
         consensus.nLwmaAveragingWindow = 90;
@@ -450,7 +453,7 @@ public:
         consensus.MinBIP9WarningHeight = 0;
 
         consensus.powLimit = uint256{"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
-        consensus.nAuxpowChainId = 0x0062;
+        consensus.nAuxpowChainId = 0x0064;
         consensus.nAuxpowStartHeight = 1;    // allow merge-mining from block 1 in regtest
         consensus.fStrictChainId = false;    // let the parent reuse our chain id in tests
         consensus.nPowTargetTimespan = 24 * 60 * 60;
