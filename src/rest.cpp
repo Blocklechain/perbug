@@ -243,11 +243,20 @@ static bool rest_headers(const std::any& context,
         }
     }
 
+    // AuxPoW headers need the proof from the stored block; the block index does not keep it.
+    std::vector<CBlockHeader> header_data;
+    header_data.reserve(headers.size());
+    for (const CBlockIndex* pindex : headers) {
+        const auto header{chainman.m_blockman.ReadBlockHeader(*pindex)};
+        if (!header) return RESTERR(req, HTTP_NOT_FOUND, "Block header data is not available");
+        header_data.push_back(*header);
+    }
+
     switch (rf) {
     case RESTResponseFormat::BINARY: {
         DataStream ssHeader{};
-        for (const CBlockIndex *pindex : headers) {
-            ssHeader << pindex->GetBlockHeader();
+        for (const CBlockHeader& header : header_data) {
+            ssHeader << header;
         }
 
         req->WriteHeader("Content-Type", "application/octet-stream");
@@ -257,8 +266,8 @@ static bool rest_headers(const std::any& context,
 
     case RESTResponseFormat::HEX: {
         DataStream ssHeader{};
-        for (const CBlockIndex *pindex : headers) {
-            ssHeader << pindex->GetBlockHeader();
+        for (const CBlockHeader& header : header_data) {
+            ssHeader << header;
         }
 
         std::string strHex = HexStr(ssHeader) + "\n";
