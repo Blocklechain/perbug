@@ -1044,6 +1044,17 @@ bool BlockManager::ReadBlock(CBlock& block, const CBlockIndex& index) const
     return ReadBlock(block, block_pos, index.GetBlockHash());
 }
 
+std::optional<CBlockHeader> BlockManager::ReadBlockHeader(const CBlockIndex& index) const
+{
+    CBlockHeader header{index.GetBlockHeader()};
+    if (!header.IsAuxpow()) return header;
+
+    // The proof only exists in the stored block, not in the block index.
+    CBlock block;
+    if (!ReadBlock(block, index)) return std::nullopt;
+    return CBlockHeader{block};
+}
+
 bool BlockManager::ReadRawBlock(std::vector<std::byte>& block, const FlatFilePos& pos) const
 {
     if (pos.nPos < STORAGE_HEADER_BYTES) {

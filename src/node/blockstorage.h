@@ -413,6 +413,14 @@ public:
     /** Functions for disk access for blocks */
     bool ReadBlock(CBlock& block, const FlatFilePos& pos, const std::optional<uint256>& expected_hash) const;
     bool ReadBlock(CBlock& block, const CBlockIndex& index) const;
+
+    /**
+     * Header for a block index entry, including the AuxPoW proof when the block carries one.
+     * CBlockIndex does not store the proof, so CBlockIndex::GetBlockHeader() returns an
+     * AuxPoW-flagged header with a null proof, which cannot be serialized. Use this wherever the
+     * header goes on the wire or out of an RPC. Returns nullopt if the block cannot be read.
+     */
+    std::optional<CBlockHeader> ReadBlockHeader(const CBlockIndex& index) const;
     bool ReadRawBlock(std::vector<std::byte>& block, const FlatFilePos& pos) const;
 
     bool ReadBlockUndo(CBlockUndo& blockundo, const CBlockIndex& index) const;
