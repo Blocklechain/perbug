@@ -134,7 +134,12 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
 
-                if (!CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits, consensusParams)) {
+                // An AuxPoW block's work is in its parent chain's header; the block index does
+                // not keep the proof, so it cannot be re-checked here. It was verified when the
+                // block was accepted.
+                CPureBlockHeader version_probe;
+                version_probe.nVersion = pindexNew->nVersion;
+                if (!version_probe.IsAuxpow() && !CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits, consensusParams)) {
                     LogError("%s: CheckProofOfWork failed: %s\n", __func__, pindexNew->ToString());
                     return false;
                 }
@@ -1018,7 +1023,8 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
     const auto block_hash{block.GetHash()};
 
     // Check the header
-    if (!CheckProofOfWork(block_hash, block.nBits, GetConsensus())) {
+    // Header-aware overload: for an AuxPoW block the work is in the parent header, not block_hash.
+    if (!CheckProofOfWork(block, GetConsensus())) {
         LogError("Errors in block header at %s while reading block", pos.ToString());
         return false;
     }
